@@ -9,4 +9,5 @@
                  [clj-http "3.4.1"]
                  [slingshot "0.12.2"]
                  [commons-validator/commons-validator "1.5.1"]
-                 [stencil "0.5.0"]])
+                 [stencil "0.5.0"]]
+  :profiles {:test {:resource-paths ["test/resources"]}})

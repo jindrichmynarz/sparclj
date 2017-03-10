@@ -7,8 +7,9 @@
             [clojure.zip :as zip]
             [clojure.data.zip.xml :as zip-xml]
             [clojure.string :as string]
+            [clojure.java.io :as io]
             [clojure.spec :as s]
-            [stencil.core :refer [render-string]]))
+            [stencil.core :as stencil]))
 
 ; ----- Specs -----
 
@@ -102,6 +103,14 @@
   (-> results
       (get-in [:headers "X-SQL-State"])
       (= "S1TAT")))
+
+
+(defn render-template
+  "Render a Mustache template using data."
+  [template data]
+  (if (or (io/resource template) (io/resource (str template ".mustache")))
+    (stencil/render-file template data)
+    (stencil/render-string template data)))
 
 (s/fdef prefix-virtuoso-operation
         :args (s/cat :virtuoso? ::virtuoso?
@@ -208,7 +217,7 @@
    template
    & {:keys [data]
       :or {data {}}}]
-  (select-query endpoint (render-string template data)))
+  (select-query endpoint (render-template template data)))
 
 (s/fdef update-operation
         :args (s/cat :endpoint ::endpoint

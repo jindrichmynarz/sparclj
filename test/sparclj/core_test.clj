@@ -1,5 +1,6 @@
 (ns sparclj.core-test
   (:require [sparclj.core :as sparql]
+            [clojure.java.io :as io]
             [clojure.test :refer :all]))
 
 (deftest format-binding
@@ -11,3 +12,9 @@
          (xsd "integer") "5" 5
          (xsd "long") "10" 10
          (xsd "string") "foo" "foo")))
+
+(deftest render-template
+  (let [template "ping_endpoint.mustache"
+        data {:source-graph "http://placeholder"}]
+    (is (= (sparql/render-template template data)
+           (sparql/render-template (slurp (io/resource template)) data)))))
