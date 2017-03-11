@@ -104,7 +104,10 @@
       (get-in [:headers "X-SQL-State"])
       (= "S1TAT")))
 
-
+(s/fdef render-template
+        :args (s/cat :template string?
+                     :date map?)
+        :ret string?)
 (defn render-template
   "Render a Mustache template using data."
   [template data]
