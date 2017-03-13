@@ -18,6 +18,12 @@
 
 (s/def ::max-retries (s/and int? pos?))
 
+(s/def ::offset ::spec/positive-int)
+
+(s/def ::page-size ::spec/positive-int)
+
+(s/def ::parallel? boolean?)
+
 (s/def ::retries ::spec/non-negative-int)
 
 (s/def ::sleep ::spec/non-negative-int)
@@ -29,7 +35,7 @@
 (s/def ::virtuoso? boolean?)
 
 (s/def ::endpoint (s/keys :req [::url]
-                          :opt [::auth ::max-retries ::sleep ::virtuoso?]))
+                          :opt [::auth ::max-retries ::page-size ::sleep ::virtuoso?]))
 
 (s/def ::query-args (s/cat :endpoint ::endpoint
                            :query string?))
@@ -183,6 +189,14 @@
       zip/xml-zip
       (zip-xml/xml1-> :sparql :results :result :binding zip-xml/text)))
 
+(defn- lazy-cat'
+  "Lazily concatenates a sequences `colls`.
+  Taken from <http://stackoverflow.com/a/26595111/385505>."
+  [colls]
+  (lazy-seq
+    (if (seq colls)
+      (concat (first colls) (lazy-cat' (next colls))))))
+
 ; ----- Public functions -----
 
 (s/fdef ask-query
@@ -221,6 +235,25 @@
    & {:keys [data]
       :or {data {}}}]
   (select-query endpoint (render-template template data)))
+
+(s/fdef select-paged
+        :args (s/cat :endpoint ::endpoint
+                     :get-query-fn (s/fspec :args (s/cat :limit ::page-size
+                                                     :offset ::offset))))
+(defn select-paged
+  "Execute paged SPARQL SELECT queries that are rendered from `get-query-fn`,
+  which is passed `page-size` (LIMIT) and increasing OFFSET as [page-size offset]."
+  [{::keys [page-size]
+    :as endpoint}
+   get-query-fn
+   & {::spec/keys [parallel?]}]
+  (let [map-fn (if parallel? pmap map)
+        pages (map vector (repeat page-size) (iterate (partial + page-size) 0))
+        execute-query-fn (partial select-query endpoint)]
+    (->> pages
+         (map-fn (comp execute-query-fn get-query-fn))
+         (take-while seq)
+         lazy-cat')))
 
 (s/fdef update-operation
         :args (s/cat :endpoint ::endpoint

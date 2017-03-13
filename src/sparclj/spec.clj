@@ -18,6 +18,8 @@
 
 (s/def ::non-negative-int (s/and int? (complement neg?)))
 
+(s/def ::positive-int (s/and int? pos?))
+
 (s/def ::urn (s/and string? urn?))
 
 (s/def ::xsd-data-type (s/and keyword? (comp (partial = "sparclj.xml-schema") namespace)))
