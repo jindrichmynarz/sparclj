@@ -227,8 +227,8 @@
         :ret string?)
 (defn construct-query
   "Execute SPARQL CONSTRUCT or DESCRIBE `query` on `endpoint`."
-  [endpoint query {::keys [accept]
-                   :or {accept "text/turtle"}}]
+  [endpoint query & {::keys [accept]
+                     :or {accept "text/turtle"}}]
   (execute-query endpoint query ::accept accept))
 
 (s/fdef select-query
