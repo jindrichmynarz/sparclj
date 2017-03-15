@@ -13,6 +13,8 @@
 
 ; ----- Specs -----
 
+(s/def ::accept string?)
+
 (s/def ::auth (s/cat :username string?
                      :password string?))
 
@@ -40,9 +42,11 @@
 (s/def ::query-args (s/cat :endpoint ::endpoint
                            :query string?))
 
-; ----- Public vars -----
+; ----- Private vars -----
 
-(def xsd "http://www.w3.org/2001/XMLSchema#")
+(def ^:private sparql-xml-mime "application/sparql-results+xml")
+
+(def ^:private xsd-ns "http://www.w3.org/2001/XMLSchema#")
 
 ; ----- Private functions -----
 
@@ -53,8 +57,8 @@
 (defn xml-schema->data-type
   "Coerce a XML Schema `data-type`."
   [data-type]
-  (if-let [xsd-data-type (and (string/starts-with? data-type xsd)
-                              (find-keyword "sparclj.xml-schema" (string/replace data-type xsd "")))]
+  (if-let [xsd-data-type (and (string/starts-with? data-type xsd-ns)
+                              (find-keyword "sparclj.xml-schema" (string/replace data-type xsd-ns "")))]
     xsd-data-type
     data-type))
 
@@ -136,17 +140,20 @@
 (s/fdef execute-sparql
         :args (s/cat :endpoint ::endpoint
                      :sparql-string string?
-                     :opts (s/? (s/keys :opt [::update?]))))
+                     :opts (s/keys* :req [::accept]
+                                    :opt [::update?])))
 (defn- execute-sparql
   [{::keys [auth sleep url virtuoso?]
     :or {sleep 0}
     :as endpoint}
    sparql-string
-   & {::keys [update?]}]
+   & {::keys [accept update?]}]
   (let [[http-fn params-key] (if update? [client/post :form-params] [client/get :query-params])
+        ; Virtuoso expects text/plain MIME type for N-Triples.
+        accept' (if (and virtuoso? (= accept "text/ntriples")) "text/plain" accept)
         params (cond-> {params-key {"query" (prefix-virtuoso-operation virtuoso? sparql-string)}
                         :throw-entire-message? true}
-                 (not update?) (assoc :headers {"Accept" "application/sparql-results+xml"})
+                 (not update?) (assoc :headers {"Accept" accept'})
                  auth (assoc :digest-auth auth))]
     (when-not (zero? sleep) (Thread/sleep sleep))
     (try+ (let [response (http-fn url params)]
@@ -161,20 +168,23 @@
 (s/fdef execute-query
         :args (s/cat :endpoint ::endpoint
                      :query string?
-                     :opts (s/? (s/keys :opt [::retries]))))
+                     :opts (s/keys* :req [::accept]
+                                    :opt [::retries])))
 (defn- execute-query
   "Execute SPARQL `query`."
   [{::keys [max-retries]
     :or {max-retries 0}
     :as endpoint}
    query
-   & {::keys [retries]
+   & {::keys [accept retries]
       :or {retries 0}}]
-  (try+ (execute-sparql endpoint query)
+  (try+ (execute-sparql endpoint query ::accept accept)
         (catch [:type ::incomplete-results] exception
           (if (< retries max-retries)
             (do (Thread/sleep (+ (* retries 1000) 1000))
-                (execute-query endpoint query ::retries (inc retries)))
+                (execute-query endpoint query
+                               ::accept accept
+                               ::retries (inc retries)))
             (throw+ exception)))))
 
 (def ^:private extract-query-results
@@ -205,11 +215,21 @@
 (defn ask-query
   "Execute SPARQL ASK `query` on `endpoint`."
   [endpoint query]
-  (->> query
-       (execute-query endpoint)
+  (->> (execute-query endpoint query ::accept sparql-xml-mime)
        extract-query-results
        first
        Boolean/parseBoolean))
+
+(s/fdef construct-query
+        :args (s/cat :endpoint ::endpoint
+                     :query string?
+                     :opts (s/keys* :opt [::accept]))
+        :ret string?)
+(defn construct-query
+  "Execute SPARQL CONSTRUCT or DESCRIBE `query` on `endpoint`."
+  [endpoint query {::keys [accept]
+                   :or {accept "text/turtle"}}]
+  (execute-query endpoint query ::accept accept))
 
 (s/fdef select-query
         :args ::query-args)
@@ -217,7 +237,8 @@
   "Execute SPARQL SELECT `query` on `endpoint`.
   Returns an empty sequence when the query has no results."
   [endpoint query]
-  (doall (for [result (extract-query-results (execute-query endpoint query))
+  (doall (for [result (extract-query-results (execute-query endpoint query
+                                                            ::accept sparql-xml-mime))
                :let [zipper (zip/xml-zip result)]]
            (->> (zip-xml/xml-> zipper :binding variable-binding-pair)
                 (partition 2)
@@ -239,9 +260,9 @@
 (s/fdef select-paged
         :args (s/cat :endpoint ::endpoint
                      :get-query-fn (s/fspec :args (s/cat :limit ::page-size
-                                                     :offset ::offset))))
+                                                         :offset ::offset))))
 (defn select-paged
-  "Execute paged SPARQL SELECT queries that are rendered from `get-query-fn`,
+  "Lazily execute paged SPARQL SELECT queries that are rendered from `get-query-fn`,
   which is passed `page-size` (LIMIT) and increasing OFFSET as [page-size offset]."
   [{::keys [page-size]
     :as endpoint}
