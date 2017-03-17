@@ -144,6 +144,7 @@
         :args (s/cat :endpoint ::endpoint
                      :sparql-fn fn?))
 (defn- execute-sparql
+  "Execute SPARQL on `endpoint`."
   [{::keys [sleep virtuoso?]
     :or {sleep 0}}
    sparql-fn]
@@ -157,12 +158,34 @@
         (catch [:status 404] _
           (throw+ {:type ::endpoint-not-found}))))
 
+(s/fdef try-sparql
+        :args (s/cat :endpoint ::endpoint
+                     :sparql-fn fn?
+                     :opts (s/keys* :opt [::retries])))
+(defn- try-sparql
+  "Try and potentially retry to execute a SPARQL query via `sparql-fn` on `endpoint`."
+  [{::keys [max-retries]
+    :or {max-retries 0}
+    :as endpoint}
+   sparql-fn
+   & {::keys [retries]
+      :or {retries 0}}]
+  (try+ (execute-sparql endpoint sparql-fn)
+        (catch [:type ::incomplete-results] exception
+          (if (< retries max-retries)
+            (do (Thread/sleep (+ (* retries 1000) 1000))
+                (try-sparql endpoint
+                            sparql-fn
+                            ::retries (inc retries)))
+            (throw+ exception)))))
+
 (s/fdef execute-query
         :args (s/cat :endpoint ::endpoint
                      :sparql-string string?
-                     :opts (s/keys* :opt [::accept])))
+                     :opt (s/keys* :req [::accept])))
 (defn- execute-query
-  [{::keys [auth sleep url virtuoso?]
+  "Execute SPARQL query `sparql-string` on SPARQL `endpoint."
+  [{::keys [auth url virtuoso?]
     :as endpoint}
    sparql-string
    & {::keys [accept]}]
@@ -172,44 +195,15 @@
                      :query-params {"query" sparql-string}
                      :throw-entire-message? true}
         params (cond-> base-params 
-                 auth (assoc :digest-auth auth))]
-    (execute-sparql endpoint (partial client/get url params))))
+                 auth (assoc :digest-auth auth))
+        sparql-fn (partial client/get url params)]
+    (try-sparql endpoint sparql-fn)))
 
 (s/fdef execute-update
         :args (s/cat :endpoint ::endpoint
                      :sparql-string string?))
-(s/fdef execute-query
-        :args (s/cat :endpoint ::endpoint
-                     :query string?
-                     :opts (s/keys* :req [::accept]
-                                    :opt [::retries])))
-(defn- execute-query
-  "Execute SPARQL `query`."
-  [{::keys [auth max-retries url virtuoso?]
-    :or {max-retries 0}
-    :as endpoint}
-   sparql-string
-   & {::keys [accept retries]
-      :or {retries 0}}]
-  (let [; Virtuoso expects text/plain MIME type for N-Triples.
-        accept' (if (and virtuoso? (= accept "text/ntriples")) "text/plain" accept)
-        base-params {:headers {"Accept" accept'}
-                     :query-params {"query" sparql-string}
-                     :throw-entire-message? true}
-        params (cond-> base-params 
-                 auth (assoc :digest-auth auth))
-        sparql-fn (partial client/get url params)]
-  (try+ (execute-sparql endpoint sparql-fn)
-        (catch [:type ::incomplete-results] exception
-          (if (< retries max-retries)
-            (do (Thread/sleep (+ (* retries 1000) 1000))
-                (execute-query endpoint
-                               sparql-string
-                               ::accept accept
-                               ::retries (inc retries)))
-            (throw+ exception))))))
-
 (defn- execute-update
+  "Execute SPARQL Update operation in `sparql-string` on SPARQL `endpoint`."
   [{::keys [auth update-url url virtuoso?]
     :as endpoint}
    sparql-string]
