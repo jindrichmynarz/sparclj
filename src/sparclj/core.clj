@@ -217,7 +217,7 @@
   "Extract results from SPARQL Query Results XML Format"
   (comp :content second :content xml/parse-str)) 
 
-(defn extract-update-response
+(defn- extract-update-response
   "Extract response from SPARQL Update operation."
   [response]
   (-> response
@@ -234,6 +234,29 @@
       (concat (first colls) (lazy-cat' (next colls))))))
 
 ; ----- Public functions -----
+
+(s/fdef init-endpoint
+        :args (s/cat :endpoint ::endpoint)
+        :ret ::endpoint)
+(defn init-endpoint
+  "Initialize SPARQL endpoint to test if it is up and accessible."
+  [{::keys [auth page-size update-url url]}]
+  (try+ (let [params {:query-params {:query "ASK { [] ?p [] . }"}
+                      :throw-entire-message? true}
+              virtuoso? (-> url
+                            (client/get (cond-> params
+                                          auth (assoc :digest-auth auth)))
+                            (get-in [:headers "Server"] "")
+                            (string/includes? "Virtuoso"))]
+          {::auth auth
+           ::page-size page-size
+           ::update-url update-url
+           ::url url
+           ::virtuoso? virtuoso?})
+        (catch [:status 401] _
+          (throw+ {:type ::invalid-auth}))
+        (catch [:status 404] _
+          (throw+ {:type ::endpoint-not-found}))))
 
 (s/fdef ask-query
         :args ::query-args
