@@ -47,9 +47,9 @@
 
 ; ----- Private vars -----
 
-(def ^:private sparql-xml-mime "application/sparql-results+xml")
+(def sparql-xml-mime "application/sparql-results+xml")
 
-(def ^:private xsd-ns "http://www.w3.org/2001/XMLSchema#")
+(def xsd-ns "http://www.w3.org/2001/XMLSchema#")
 
 ; ----- Private functions -----
 
@@ -142,34 +142,42 @@
 
 (s/fdef execute-sparql
         :args (s/cat :endpoint ::endpoint
-                     :sparql-string string?
-                     :opts (s/keys* :req [::accept]
-                                    :opt [::update?])))
+                     :sparql-fn fn?))
 (defn- execute-sparql
-  [{::keys [auth sleep update-url url virtuoso?]
-    :or {sleep 0}
+  [{::keys [sleep virtuoso?]
+    :or {sleep 0}}
+   sparql-fn]
+  (when-not (zero? sleep) (Thread/sleep sleep))
+  (try+ (let [response (sparql-fn)]
+          (if (and virtuoso? (incomplete-results? response))
+            (throw+ {:type ::incomplete-results})
+            (:body response)))
+        (catch [:status 401] _
+          (throw+ {:type ::invalid-auth}))
+        (catch [:status 404] _
+          (throw+ {:type ::endpoint-not-found}))))
+
+(s/fdef execute-query
+        :args (s/cat :endpoint ::endpoint
+                     :sparql-string string?
+                     :opts (s/keys* :opt [::accept])))
+(defn- execute-query
+  [{::keys [auth sleep url virtuoso?]
     :as endpoint}
    sparql-string
-   & {::keys [accept update?]}]
-  (let [[http-fn params-key url'] (if update?
-                                    [client/post :form-params (or update-url url)]
-                                    [client/get :query-params url])
-        ; Virtuoso expects text/plain MIME type for N-Triples.
+   & {::keys [accept]}]
+  (let [; Virtuoso expects text/plain MIME type for N-Triples.
         accept' (if (and virtuoso? (= accept "text/ntriples")) "text/plain" accept)
-        params (cond-> {params-key {"query" (prefix-virtuoso-operation virtuoso? sparql-string)}
-                        :throw-entire-message? true}
-                 (not update?) (assoc :headers {"Accept" accept'})
+        base-params {:headers {"Accept" accept'}
+                     :query-params {"query" sparql-string}
+                     :throw-entire-message? true}
+        params (cond-> base-params 
                  auth (assoc :digest-auth auth))]
-    (when-not (zero? sleep) (Thread/sleep sleep))
-    (try+ (let [response (http-fn url' params)]
-            (if (and virtuoso? (incomplete-results? response))
-              (throw+ {:type ::incomplete-results})
-              (:body response)))
-          (catch [:status 401] _
-            (throw+ {:type ::invalid-auth}))
-          (catch [:status 404] _
-            (throw+ {:type ::endpoint-not-found})))))
+    (execute-sparql endpoint (partial client/get url params))))
 
+(s/fdef execute-update
+        :args (s/cat :endpoint ::endpoint
+                     :sparql-string string?))
 (s/fdef execute-query
         :args (s/cat :endpoint ::endpoint
                      :query string?
@@ -177,20 +185,39 @@
                                     :opt [::retries])))
 (defn- execute-query
   "Execute SPARQL `query`."
-  [{::keys [max-retries]
+  [{::keys [auth max-retries url virtuoso?]
     :or {max-retries 0}
     :as endpoint}
-   query
+   sparql-string
    & {::keys [accept retries]
       :or {retries 0}}]
-  (try+ (execute-sparql endpoint query ::accept accept)
+  (let [; Virtuoso expects text/plain MIME type for N-Triples.
+        accept' (if (and virtuoso? (= accept "text/ntriples")) "text/plain" accept)
+        base-params {:headers {"Accept" accept'}
+                     :query-params {"query" sparql-string}
+                     :throw-entire-message? true}
+        params (cond-> base-params 
+                 auth (assoc :digest-auth auth))
+        sparql-fn (partial client/get url params)]
+  (try+ (execute-sparql endpoint sparql-fn)
         (catch [:type ::incomplete-results] exception
           (if (< retries max-retries)
             (do (Thread/sleep (+ (* retries 1000) 1000))
-                (execute-query endpoint query
+                (execute-query endpoint
+                               sparql-string
                                ::accept accept
                                ::retries (inc retries)))
-            (throw+ exception)))))
+            (throw+ exception))))))
+
+(defn- execute-update
+  [{::keys [auth update-url url virtuoso?]
+    :as endpoint}
+   sparql-string]
+  (let [base-params {:form-params {"update" (prefix-virtuoso-operation virtuoso? sparql-string)}
+                     :throw-entire-message? true}
+        params (cond-> base-params
+                 auth (assoc :digest-auth auth))]
+    (execute-sparql endpoint (partial client/post (or update-url url) params))))
 
 (def ^:private extract-query-results
   "Extract results from SPARQL Query Results XML Format"
@@ -289,4 +316,4 @@
   "Execute SPARQL Update `operation` on `endpoint`."
   [endpoint
    operation]
-  (extract-update-response (execute-sparql endpoint operation ::update? true)))
+  (extract-update-response (execute-update endpoint operation)))
