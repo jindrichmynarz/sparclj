@@ -260,14 +260,15 @@
 (s/fdef select-paged
         :args (s/cat :endpoint ::endpoint
                      :get-query-fn (s/fspec :args (s/cat :limit ::page-size
-                                                         :offset ::offset))))
+                                                         :offset ::offset))
+                     :opts (s/keys* :opt [::parallel?])))
 (defn select-paged
   "Lazily execute paged SPARQL SELECT queries that are rendered from `get-query-fn`,
   which is passed `page-size` (LIMIT) and increasing OFFSET as [page-size offset]."
   [{::keys [page-size]
     :as endpoint}
    get-query-fn
-   & {::spec/keys [parallel?]}]
+   & {::keys [parallel?]}]
   (let [map-fn (if parallel? pmap map)
         pages (map vector (repeat page-size) (iterate (partial + page-size) 0))
         execute-query-fn (partial select-query endpoint)]
