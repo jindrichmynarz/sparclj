@@ -6,7 +6,7 @@
 (derive ::base64binary ::anySimpleType)
 (derive ::hexBinary ::anySimpleType)
 (derive ::float ::anySimpleType)
-(derive ::decimal ::anySimpleType)
+(derive ::decimal ::double)
 (derive ::double ::anySimpleType)
 (derive ::anyURI ::anySimpleType)
 (derive ::QName ::anySimpleType)
