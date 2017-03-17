@@ -34,10 +34,13 @@
 
 (s/def ::url (s/and ::spec/iri spec/http?))
 
+(s/def ::update-url ::url)
+
 (s/def ::virtuoso? boolean?)
 
 (s/def ::endpoint (s/keys :req [::url]
-                          :opt [::auth ::max-retries ::page-size ::sleep ::virtuoso?]))
+                          :opt [::auth ::max-retries ::page-size
+                                ::sleep ::update-url ::virtuoso?]))
 
 (s/def ::query-args (s/cat :endpoint ::endpoint
                            :query string?))
@@ -143,12 +146,14 @@
                      :opts (s/keys* :req [::accept]
                                     :opt [::update?])))
 (defn- execute-sparql
-  [{::keys [auth sleep url virtuoso?]
+  [{::keys [auth sleep update-url url virtuoso?]
     :or {sleep 0}
     :as endpoint}
    sparql-string
    & {::keys [accept update?]}]
-  (let [[http-fn params-key] (if update? [client/post :form-params] [client/get :query-params])
+  (let [[http-fn params-key url'] (if update?
+                                    [client/post :form-params (or update-url url)]
+                                    [client/get :query-params url])
         ; Virtuoso expects text/plain MIME type for N-Triples.
         accept' (if (and virtuoso? (= accept "text/ntriples")) "text/plain" accept)
         params (cond-> {params-key {"query" (prefix-virtuoso-operation virtuoso? sparql-string)}
@@ -156,7 +161,7 @@
                  (not update?) (assoc :headers {"Accept" accept'})
                  auth (assoc :digest-auth auth))]
     (when-not (zero? sleep) (Thread/sleep sleep))
-    (try+ (let [response (http-fn url params)]
+    (try+ (let [response (http-fn url' params)]
             (if (and virtuoso? (incomplete-results? response))
               (throw+ {:type ::incomplete-results})
               (:body response)))
