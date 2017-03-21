@@ -51,7 +51,17 @@
 
 (def xsd-ns "http://www.w3.org/2001/XMLSchema#")
 
+(xml/alias-uri :srx "http://www.w3.org/2005/sparql-results#")
+
 ; ----- Private functions -----
+
+(s/fdef zipper?
+        :args (s/cat :obj any?)
+        :ret boolean?)
+(defn- zipper?
+  "Checks to see if the object has zip/make-node metadata on it (confirming it to be a zipper)."
+  [obj]
+  (contains? (meta obj) :zip/make-node))
 
 (s/fdef xml-schema->data-type
         :args ::spec/iri-urn
@@ -102,7 +112,7 @@
   (let [{{:keys [datatype]} :attrs
          [content & _] :content
          :keys [tag]} (zip-xml/xml1-> result zip/down zip/node)]
-    (if (and (= tag :literal) datatype)
+    (if (and (= tag ::srx/literal) datatype)
       (format-binding datatype content)
       content)))
 
@@ -194,7 +204,7 @@
         base-params {:headers {"Accept" accept'}
                      :query-params {"query" sparql-string}
                      :throw-entire-message? true}
-        params (cond-> base-params 
+        params (cond-> base-params
                  auth (assoc :digest-auth auth))
         sparql-fn (partial client/get url params)]
     (try-sparql endpoint sparql-fn)))
@@ -213,17 +223,43 @@
                  auth (assoc :digest-auth auth))]
     (execute-sparql endpoint (partial client/post (or update-url url) params))))
 
-(def ^:private extract-query-results
+(s/fdef extract-sparql-results
+        :args (s/cat :results string?)
+        :ret zipper?)
+(def ^:private extract-sparql-results
   "Extract results from SPARQL Query Results XML Format"
-  (comp :content second :content xml/parse-str)) 
+  (comp zip/xml-zip xml/parse-str))
 
-(defn- extract-update-response
+(s/fdef extract-ask-results
+        :args (s/cat :results string?)
+        :ret boolean?)
+(defn- extract-ask-results
+  "Extract results of a SPARQL ASK query"
+  [results]
+  (-> results
+      extract-sparql-results
+      (zip-xml/xml1-> ::srx/sparql ::srx/boolean zip-xml/text)
+      Boolean/parseBoolean))
+
+(s/fdef extract-select-results
+       :args (s/cat :results string?)
+       :ret zipper?)
+(defn- extract-select-results
+  "Extract results of a SPARQL SELECT query."
+  [results]
+  (-> results
+      extract-sparql-results
+      (zip-xml/xml-> ::srx/sparql ::srx/results ::srx/result)))
+
+(s/fdef extract-update-results
+       :args (s/cat :results string?)
+       :ret string?)
+(defn- extract-update-results
   "Extract response from SPARQL Update operation."
   [response]
   (-> response
-      xml/parse-str
-      zip/xml-zip
-      (zip-xml/xml1-> :sparql :results :result :binding zip-xml/text)))
+      extract-sparql-results
+      (zip-xml/xml1-> ::srx/sparql ::srx/results ::srx/result ::srx/binding zip-xml/text)))
 
 (defn- lazy-cat'
   "Lazily concatenates a sequences `colls`.
@@ -264,10 +300,7 @@
 (defn ask-query
   "Execute SPARQL ASK `query` on `endpoint`."
   [endpoint query]
-  (->> (execute-query endpoint query ::accept sparql-xml-mime)
-       extract-query-results
-       first
-       Boolean/parseBoolean))
+  (extract-ask-results (execute-query endpoint query ::accept sparql-xml-mime)))
 
 (s/fdef construct-query
         :args (s/cat :endpoint ::endpoint
@@ -286,10 +319,8 @@
   "Execute SPARQL SELECT `query` on `endpoint`.
   Returns an empty sequence when the query has no results."
   [endpoint query]
-  (doall (for [result (extract-query-results (execute-query endpoint query
-                                                            ::accept sparql-xml-mime))
-               :let [zipper (zip/xml-zip result)]]
-           (->> (zip-xml/xml-> zipper :binding variable-binding-pair)
+  (doall (for [result (extract-select-results (execute-query endpoint query ::accept sparql-xml-mime))]
+           (->> (zip-xml/xml-> result ::srx/binding variable-binding-pair)
                 (partition 2)
                 (map vec)
                 (into {})))))
@@ -332,4 +363,4 @@
   "Execute SPARQL Update `operation` on `endpoint`."
   [endpoint
    operation]
-  (extract-update-response (execute-update endpoint operation)))
+  (extract-update-results (execute-update endpoint operation)))
