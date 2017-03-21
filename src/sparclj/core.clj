@@ -300,11 +300,10 @@
                      :data (s/? map?)))
 (defn select-template
   "Execute SPARQL SELECT query rendered from Mustache `template` file using `data`."
-  [endpoint
-   template
-   & {:keys [data]
-      :or {data {}}}]
-  (select-query endpoint (render-template template data)))
+  ([endpoint template]
+   (select-template endpoint template {}))
+  ([endpoint template data]
+   (select-query endpoint (render-template template data))))
 
 (s/fdef select-paged
         :args (s/cat :endpoint ::endpoint
