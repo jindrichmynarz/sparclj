@@ -96,7 +96,7 @@
 
 (defmethod format-binding ::xsd/integer
   [_ content]
-  (Integer/parseInt content))
+  (BigInteger. content))
 
 (defmethod format-binding ::xsd/long
   [_ content]
