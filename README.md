@@ -1,5 +1,7 @@
 # sparclj
 
+[![Clojars Project](https://img.shields.io/clojars/v/sparclj.svg)](https://clojars.org/sparclj)
+
 A Clojure library for talking with SPARQL endpoints.
 
 ## License
