@@ -338,8 +338,8 @@
 
 (s/fdef select-paged
         :args (s/cat :endpoint ::endpoint
-                     :get-query-fn (s/fspec :args (s/cat :limit ::page-size
-                                                         :offset ::offset))
+                     :get-query-fn (s/fspec :args (s/cat :page (s/cat :limit ::page-size
+                                                                      :offset ::offset)))
                      :opts (s/keys* :opt [::parallel?])))
 (defn select-paged
   "Lazily execute paged SPARQL SELECT queries that are rendered from `get-query-fn`,
