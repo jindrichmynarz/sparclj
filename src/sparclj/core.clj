@@ -8,7 +8,7 @@
             [clojure.data.zip.xml :as zip-xml]
             [clojure.string :as string]
             [clojure.java.io :as io]
-            [clojure.spec :as s]
+            [clojure.spec.alpha :as s]
             [stencil.core :as stencil]))
 
 ; ----- Specs -----

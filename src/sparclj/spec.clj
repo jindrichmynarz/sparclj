@@ -1,5 +1,5 @@
 (ns sparclj.spec
-  (:require [clojure.spec :as s])
+  (:require [clojure.spec.alpha :as s])
   (:import (org.apache.commons.validator.routines UrlValidator)))
 
 (def http?
