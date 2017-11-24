@@ -7,7 +7,7 @@
         :url "https://github.com/jindrichmynarz/sparclj"}
   :dependencies [[org.clojure/clojure "1.9.0-alpha17"]
                  [org.clojure/data.zip "0.1.2"]
-                 [org.clojure/data.xml "0.2.0-alpha2"]
+                 [org.clojure/data.xml "0.2.0-alpha5"]
                  [clj-http "3.4.1"]
                  [slingshot "0.12.2"]
                  [commons-validator/commons-validator "1.5.1"]

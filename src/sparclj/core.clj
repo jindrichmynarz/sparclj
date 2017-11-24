@@ -3,8 +3,9 @@
             [sparclj.xml-schema :as xsd]
             [clj-http.client :as client]
             [slingshot.slingshot :refer [throw+ try+]]
-            [clojure.data.xml :as xml]
             [clojure.zip :as zip]
+            [clojure.data.xml :as xml]
+            [clojure.data.zip :as zf]
             [clojure.data.zip.xml :as zip-xml]
             [clojure.string :as string]
             [clojure.java.io :as io]
@@ -112,12 +113,16 @@
   [_ content]
   content)
 
+(def ^:private filter-elements
+  "Filter element nodes from in node's children."
+  (comp (partial filter (comp xml/element? zip/node)) zf/children))
+
 (defn- get-binding
   "Get binding from `result`."
   [result]
   (let [{{:keys [datatype]} :attrs
          [content & _] :content
-         :keys [tag]} (zip-xml/xml1-> result zip/down zip/node)]
+         :keys [tag]} (zip-xml/xml1-> result filter-elements zip/node)]
     (if (and (= tag ::srx/literal) datatype)
       (format-binding datatype content)
       content)))
