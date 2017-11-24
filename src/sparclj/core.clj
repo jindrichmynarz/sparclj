@@ -9,7 +9,8 @@
             [clojure.string :as string]
             [clojure.java.io :as io]
             [clojure.spec.alpha :as s]
-            [stencil.core :as stencil]))
+            [stencil.core :as stencil])
+  (:import (java.net URL)))
 
 ; ----- Specs -----
 
@@ -26,6 +27,10 @@
 
 (s/def ::parallel? boolean?)
 
+(s/def ::proxy-host string?)
+
+(s/def ::proxy-port ::spec/positive-int)
+
 (s/def ::retries ::spec/non-negative-int)
 
 (s/def ::sleep ::spec/non-negative-int)
@@ -40,6 +45,7 @@
 
 (s/def ::endpoint (s/keys :req [::url]
                           :opt [::auth ::max-retries ::page-size
+                                ::proxy-host ::proxy-port
                                 ::sleep ::update-url ::virtuoso?]))
 
 (s/def ::query-args (s/cat :endpoint ::endpoint
@@ -195,7 +201,7 @@
                      :opt (s/keys* :req [::accept])))
 (defn- execute-query
   "Execute SPARQL query `sparql-string` on SPARQL `endpoint."
-  [{::keys [auth url virtuoso?]
+  [{::keys [auth proxy-host proxy-port url virtuoso?]
     :as endpoint}
    sparql-string
    & {::keys [accept]}]
@@ -205,7 +211,9 @@
                      :query-params {"query" sparql-string}
                      :throw-entire-message? true}
         params (cond-> base-params
-                 auth (assoc :digest-auth auth))
+                 auth (assoc :digest-auth auth)
+                 proxy-host (assoc :proxy-host proxy-host
+                                   :proxy-port proxy-port))
         sparql-fn (partial client/get url params)]
     (try-sparql endpoint sparql-fn)))
 
@@ -214,13 +222,15 @@
                      :sparql-string string?))
 (defn- execute-update
   "Execute SPARQL Update operation in `sparql-string` on SPARQL `endpoint`."
-  [{::keys [auth update-url url virtuoso?]
+  [{::keys [auth proxy-host proxy-port update-url url virtuoso?]
     :as endpoint}
    sparql-string]
   (let [base-params {:form-params {"update" (prefix-virtuoso-operation virtuoso? sparql-string)}
                      :throw-entire-message? true}
         params (cond-> base-params
-                 auth (assoc :digest-auth auth))]
+                 auth (assoc :digest-auth auth)
+                 proxy-host (assoc :proxy-host proxy-host
+                                   :proxy-port proxy-port))]
     (execute-sparql endpoint (partial client/post (or update-url url) params))))
 
 (s/fdef extract-sparql-results
@@ -256,11 +266,14 @@
        :ret string?)
 (defn- extract-update-results
   "Extract response from SPARQL Update operation."
-  [response]
-  (-> response
+  [results]
+  (-> results
       extract-sparql-results
       (zip-xml/xml1-> ::srx/sparql ::srx/results ::srx/result ::srx/binding zip-xml/text)))
 
+(s/fdef lazy-cat'
+        :args (s/cat :colls (s/coll-of seq?))
+        :ret seq?)
 (defn- lazy-cat'
   "Lazily concatenates a sequences `colls`.
   Taken from <http://stackoverflow.com/a/26595111/385505>."
@@ -269,6 +282,16 @@
     (if (seq colls)
       (concat (first colls) (lazy-cat' (next colls))))))
 
+(s/fdef get-http-proxy
+        :args (s/cat)
+        :ret (s/keys :req [::proxy-host ::proxy-port]))
+(defn- get-http-proxy
+  []
+  (when-let [http-proxy (System/getenv "http_proxy")]
+    (let [url (URL. http-proxy)]
+      {::proxy-host (.getHost url)
+       ::proxy-port (.getPort url)})))
+
 ; ----- Public functions -----
 
 (s/fdef init-endpoint
@@ -276,7 +299,8 @@
         :ret ::endpoint)
 (defn init-endpoint
   "Initialize SPARQL endpoint to test if it is up and accessible."
-  [{::keys [auth page-size update-url url]}]
+  [{::keys [auth proxy-host proxy-port url]
+    :as endpoint}]
   (try+ (let [params {:query-params {:query "ASK { [] ?p [] . }"}
                       :throw-entire-message? true}
               virtuoso? (-> url
@@ -284,11 +308,8 @@
                                           auth (assoc :digest-auth auth)))
                             (get-in [:headers "Server"] "")
                             (string/includes? "Virtuoso"))]
-          {::auth auth
-           ::page-size page-size
-           ::update-url update-url
-           ::url url
-           ::virtuoso? virtuoso?})
+          (merge (when-not proxy-host (get-http-proxy)) ; Use $http_proxy environment variable if no proxy is specified.
+                 (assoc endpoint ::virtuoso virtuoso?)))
         (catch [:status 401] _
           (throw+ {:type ::invalid-auth}))
         (catch [:status 404] _
