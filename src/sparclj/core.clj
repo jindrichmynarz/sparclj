@@ -299,7 +299,7 @@
         :ret ::endpoint)
 (defn init-endpoint
   "Initialize SPARQL endpoint to test if it is up and accessible."
-  [{::keys [auth proxy-host proxy-port url]
+  [{::keys [auth url]
     :as endpoint}]
   (try+ (let [params {:query-params {:query "ASK { [] ?p [] . }"}
                       :throw-entire-message? true}
@@ -308,8 +308,7 @@
                                           auth (assoc :digest-auth auth)))
                             (get-in [:headers "Server"] "")
                             (string/includes? "Virtuoso"))]
-          (merge (when-not proxy-host (get-http-proxy)) ; Use $http_proxy environment variable if no proxy is specified.
-                 (assoc endpoint ::virtuoso virtuoso?)))
+          (assoc endpoint ::virtuoso virtuoso?))
         (catch [:status 401] _
           (throw+ {:type ::invalid-auth}))
         (catch [:status 404] _
