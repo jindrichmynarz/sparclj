@@ -1,5 +1,6 @@
 (ns sparclj.spec
-  (:require [clojure.spec.alpha :as s])
+  (:require [clojure.spec.alpha :as s]
+            [clojure.data.xml :as xml])
   (:import (org.apache.commons.validator.routines UrlValidator)))
 
 (def http?
@@ -29,3 +30,5 @@
 
 (s/def ::iri-urn (s/or :iri ::iri
                        :urn ::urn))
+
+(s/def ::xml-element xml/element?)

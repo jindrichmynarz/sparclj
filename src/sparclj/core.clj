@@ -82,50 +82,64 @@
     xsd-data-type
     data-type))
 
-(s/fdef format-binding
+(s/fdef format-literal
         :args (s/cat :data-type ::spec/data-type
-                     :binding any?))
-(defmulti format-binding
-  "Format a SPARQL result binding"
+                     :literal string?)
+        :ret any?)
+(defmulti format-literal
+  "Format a SPARQL result literal"
   (fn [data-type _] (xml-schema->data-type data-type)))
 
-(defmethod format-binding ::xsd/boolean
-  [_ content]
-  (Boolean/parseBoolean content))
+(defmethod format-literal ::xsd/boolean
+  [_ literal]
+  (Boolean/parseBoolean literal))
 
-(defmethod format-binding ::xsd/double
-  [_ content]
-  (Double/parseDouble content))
+(defmethod format-literal ::xsd/double
+  [_ literal]
+  (Double/parseDouble literal))
 
-(defmethod format-binding ::xsd/float
-  [_ content]
-  (Float/parseFloat content))
+(defmethod format-literal ::xsd/float
+  [_ literal]
+  (Float/parseFloat literal))
 
-(defmethod format-binding ::xsd/integer
-  [_ content]
-  (BigInteger. content))
+(defmethod format-literal ::xsd/integer
+  [_ literal]
+  (BigInteger. literal))
 
-(defmethod format-binding ::xsd/long
-  [_ content]
-  (Long/parseLong content))
+(defmethod format-literal ::xsd/long
+  [_ literal]
+  (Long/parseLong literal))
 
-(defmethod format-binding :default
-  [_ content]
-  content)
+(defmethod format-literal :default
+  [_ literal]
+  literal)
 
-(def ^:private filter-elements
-  "Filter element nodes from in node's children."
-  (comp (partial filter (comp xml/element? zip/node)) zf/children))
+(s/fdef format-binding
+        :args (s/cat :element ::spec/xml-element)
+        :ret any?)
+(defmulti format-binding
+  "Format a SPARQL variable binding"
+  :tag)
+
+(defmethod format-binding ::srx/bnode
+  [{[bnode & _] :content}]
+  (str "_:" bnode))
+
+(defmethod format-binding ::srx/literal
+  [{{:keys [datatype]} :attrs
+    [literal & _] :content}]
+  (if datatype
+    (format-literal datatype literal)
+    literal))
+
+(defmethod format-binding ::srx/uri
+  [{[iri & _] :content}]
+  iri)
 
 (defn- get-binding
   "Get binding from `result`."
   [result]
-  (let [{{:keys [datatype]} :attrs
-         [content & _] :content
-         :keys [tag]} (zip-xml/xml1-> result filter-elements zip/node)]
-    (if (and (= tag ::srx/literal) datatype)
-      (format-binding datatype content)
-      content)))
+  (format-binding (zip-xml/xml1-> result zip/down zip/node)))
 
 (def ^:private variable-binding-pair
   "Returns a pair of variable name and its binding."
@@ -241,9 +255,12 @@
 (s/fdef extract-sparql-results
         :args (s/cat :results string?)
         :ret zipper?)
-(def ^:private extract-sparql-results
+(defn ^:private extract-sparql-results
   "Extract results from SPARQL Query Results XML Format"
-  (comp zip/xml-zip xml/parse-str))
+  [results]
+  (-> results
+      (xml/parse-str :skip-whitespace true)
+      zip/xml-zip))
 
 (s/fdef extract-ask-results
         :args (s/cat :results string?)
