@@ -36,6 +36,8 @@
 
 (s/def ::sleep ::spec/non-negative-int)
 
+(s/def ::start-from ::spec/non-negative-int)
+
 (s/def ::update? boolean?)
 
 (s/def ::url (s/and ::spec/iri spec/http?))
@@ -211,7 +213,7 @@
    sparql-string
    & {::keys [accept]}]
   (let [; Virtuoso expects text/plain MIME type for N-Triples.
-        accept' (if (and virtuoso? (= accept "text/ntriples")) "text/plain" accept)
+        accept' (if (and virtuoso? (= accept "application/n-triples")) "text/plain" accept)
         base-params {:headers {"Accept" accept'}
                      :query-params {"query" sparql-string}
                      :throw-entire-message? true}
@@ -365,16 +367,18 @@
         :args (s/cat :endpoint ::endpoint
                      :get-query-fn (s/fspec :args (s/cat :page (s/cat :limit ::page-size
                                                                       :offset ::offset)))
-                     :opts (s/keys* :opt [::parallel?])))
+                     :opts (s/keys* :opt [::parallel? ::start-from])))
 (defn select-paged
   "Lazily execute paged SPARQL SELECT queries that are rendered from `get-query-fn`,
-  which is passed `page-size` (LIMIT) and increasing OFFSET as [page-size offset]."
+  which is passed `page-size` (LIMIT) and increasing OFFSET as [page-size offset].
+  Queries will be executed in parallel if the ::parallel? parameter is set to true.
+  Can start from the offset given by ::start-from (default = 0)."
   [{::keys [page-size]
     :as endpoint}
    get-query-fn
-   & {::keys [parallel?]}]
+   & {::keys [parallel? start-from]}]
   (let [map-fn (if parallel? pmap map)
-        pages (map vector (repeat page-size) (iterate (partial + page-size) 0))
+        pages (map vector (repeat page-size) (iterate (partial + page-size) (or start-from 0)))
         execute-query-fn (partial select-query endpoint)]
     (->> pages
          (map-fn (comp execute-query-fn get-query-fn))
