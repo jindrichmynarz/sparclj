@@ -3,9 +3,9 @@
             [clojure.java.io :as io]
             [clojure.test :refer :all]))
 
-(deftest format-binding
+(deftest format-literal
   (let [xsd (partial str sparql/xsd-ns)]
-    (are [datatype content result] (= (sparql/format-binding datatype content) result)
+    (are [datatype content result] (= (sparql/format-literal datatype content) result)
          (xsd "boolean") "true" true
          (xsd "double") "1.23" 1.23
          (xsd "float") ".1e6" 100000.0
