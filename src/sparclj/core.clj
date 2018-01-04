@@ -306,16 +306,6 @@
     (if (seq colls)
       (concat (first colls) (lazy-cat' (next colls))))))
 
-(s/fdef get-http-proxy
-        :args (s/cat)
-        :ret (s/keys :req [::proxy-host ::proxy-port]))
-(defn- get-http-proxy
-  []
-  (when-let [http-proxy (System/getenv "http_proxy")]
-    (let [url (URL. http-proxy)]
-      {::proxy-host (.getHost url)
-       ::proxy-port (.getPort url)})))
-
 ; ----- Public functions -----
 
 (s/fdef init-endpoint
