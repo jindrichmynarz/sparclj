@@ -1,4 +1,4 @@
-(defproject sparclj "0.2.0"
+(defproject sparclj "0.2.1"
   :description "A Clojure library for talking with SPARQL endpoints"
   :url "https://github.com/jindrichmynarz/sparclj"
   :license {:name "Eclipse Public License"
