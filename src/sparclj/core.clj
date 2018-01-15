@@ -11,7 +11,7 @@
             [clojure.java.io :as io]
             [clojure.spec.alpha :as s]
             [stencil.core :as stencil])
-  (:import (java.net URL)))
+  (:import (java.net ConnectException URL)))
 
 ; ----- Specs -----
 
@@ -323,6 +323,9 @@
                             (get-in [:headers "Server"] "")
                             (string/includes? "Virtuoso"))]
           (assoc endpoint ::virtuoso virtuoso?))
+        (catch ConnectException ex
+          (throw+ {:type ::connect-exception
+                   :message (.getMessage ex)}))
         (catch [:status 401] _
           (throw+ {:type ::invalid-auth}))
         (catch [:status 404] _
