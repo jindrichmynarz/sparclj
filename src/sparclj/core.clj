@@ -17,8 +17,12 @@
 
 (s/def ::accept string?)
 
+(s/def ::additional-params map?)
+
 (s/def ::auth (s/cat :username string?
                      :password string?))
+
+(s/def ::data-type #{::clj ::csv})
 
 (s/def ::max-retries (s/and int? pos?))
 
@@ -219,18 +223,21 @@
 (s/fdef execute-query
         :args (s/cat :endpoint ::endpoint
                      :sparql-string string?
-                     :opt (s/keys* :req [::accept])))
+                     :opt (s/keys* :req [::accept]
+                                   :opt [::additional-params])))
 (defn- execute-query
   "Execute SPARQL query `sparql-string` on SPARQL `endpoint."
   [{::keys [auth proxy-host proxy-port url virtuoso?]
     :as endpoint}
    sparql-string
-   & {::keys [accept]}]
+   & {::keys [accept additional-params]
+      :or {additional-params {}}}]
   (let [; Virtuoso expects text/plain MIME type for N-Triples.
         accept' (if (and virtuoso? (= accept "application/n-triples")) "text/plain" accept)
-        base-params {:headers {"Accept" accept'}
-                     :query-params {"query" sparql-string}
-                     :throw-entire-message? true}
+        base-params (merge {:headers {"Accept" accept'}
+                            :query-params {"query" sparql-string}
+                            :throw-entire-message? true}
+                           additional-params)
         params (cond-> base-params
                  auth (assoc :digest-auth auth)
                  proxy-host (assoc :proxy-host proxy-host
@@ -350,17 +357,28 @@
                      :or {accept "text/turtle"}}]
   (execute-query endpoint query ::accept accept))
 
-(s/fdef select-query
-        :args ::query-args)
-(defn select-query
-  "Execute SPARQL SELECT `query` on `endpoint`.
-  Returns an empty sequence when the query has no results."
-  [endpoint query]
+(defmulti select-query
+  "Execute SPARQL SELECT `query` on `endpoint`."
+  (fn [endpoint query & {::keys [data-type]
+                         :or {data-type ::clj}}]
+    data-type))
+
+(defmethod select-query ::clj
+  ; Returns an empty sequence when the query has no results.
+  [endpoint query & _]
   (doall (for [result (extract-select-results (execute-query endpoint query ::accept sparql-xml-mime))]
            (->> (zip-xml/xml-> result ::srx/binding variable-binding-pair)
                 (partition 2)
                 (map vec)
                 (into {})))))
+
+(defmethod select-query ::csv
+  ; Consume using the `with-open` block.
+  [endpoint query & _]
+  (io/reader (execute-query endpoint
+                            query
+                            ::accept "text/csv"
+                            ::additional-params {:as :stream})))
 
 (s/fdef select-template
         :args (s/cat :endpoint ::endpoint
