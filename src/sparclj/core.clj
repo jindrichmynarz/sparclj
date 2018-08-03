@@ -313,6 +313,23 @@
     (if (seq colls)
       (concat (first colls) (lazy-cat' (next colls))))))
 
+(def ^:private mirror-proxy-settings
+  "Mirror environment variables for proxies (HTTP_PROXY, HTTPS_PROXY, NO_PROXY) as Java properties.
+  Environment variables are treated as case-insensitive, so for example both $http_proxy and $HTTP_PROXY will work."
+  (letfn [(dual-case [s] [s (string/upper-case s)])
+          (get-env [env] (some #(System/getenv %) (dual-case env)))
+          (parse-url [^URL url] [(.getHost url) (str (.getPort url))])
+          (get-env-url [env] (some-> (get-env env) (URL.) parse-url))
+          (set-proxy [protocol & {:keys [no-proxy]}]
+            (when-let [[host port] (get-env-url (str protocol "_proxy"))]
+              (System/setProperty (str protocol ".proxyHost") host)
+              (System/setProperty (str protocol ".proxyPort") port))
+            (when no-proxy (System/setProperty (str protocol ".nonProxyHosts") no-proxy)))]
+    (fn []
+      (let [no-proxy (get-env "no_proxy")]
+        (set-proxy "http" :no-proxy no-proxy)
+        (set-proxy "https" :no-proxy no-proxy)))))
+
 ; ----- Public functions -----
 
 (s/fdef init-endpoint
@@ -322,6 +339,7 @@
   "Initialize SPARQL endpoint to test if it is up and accessible."
   [{::keys [auth url]
     :as endpoint}]
+  (mirror-proxy-settings)
   (try+ (let [params {:query-params {:query "ASK { [] ?p [] . }"}
                       :throw-entire-message? true}
               virtuoso? (-> url
