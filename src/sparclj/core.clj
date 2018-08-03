@@ -326,7 +326,8 @@
               (System/setProperty (str protocol ".proxyPort") port))
             (when no-proxy (System/setProperty (str protocol ".nonProxyHosts") no-proxy)))]
     (fn []
-      (let [no-proxy (get-env "no_proxy")]
+      (let [no-proxy (some-> (get-env "no_proxy")
+                             (string/replace #"," "|"))]
         (set-proxy "http" :no-proxy no-proxy)
         (set-proxy "https" :no-proxy no-proxy)))))
 
