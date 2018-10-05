@@ -348,7 +348,7 @@
                                           auth (assoc :digest-auth auth)))
                             (get-in [:headers "Server"] "")
                             (string/includes? "Virtuoso"))]
-          (assoc endpoint ::virtuoso virtuoso?))
+          (assoc endpoint ::virtuoso? virtuoso?))
         (catch ConnectException ex
           (throw+ {:type ::connect-exception
                    :message (.getMessage ex)}))
