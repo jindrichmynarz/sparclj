@@ -394,10 +394,12 @@
 (defmethod select-query ::csv
   ; Consume using the `with-open` block.
   [endpoint query & _]
-  (io/reader (execute-query endpoint
-                            query
-                            ::accept "text/csv"
-                            ::additional-params {:as :stream})))
+  (io/reader (try+ (execute-query endpoint
+                                  query
+                                  ::accept "text/csv"
+                                  ::additional-params {:as :stream})
+                   (catch Object ex
+                     (throw+ (update ex :body slurp))))))
 
 (s/fdef select-template
         :args (s/cat :endpoint ::endpoint
