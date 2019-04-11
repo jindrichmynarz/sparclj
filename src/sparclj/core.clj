@@ -134,15 +134,15 @@
 (defmethod format-binding ::srx/literal
   [{{:keys [datatype]} :attrs
     [literal & _] :content}]
-  (if datatype
-    (format-literal datatype literal)
-    literal))
+  (cond datatype (format-literal datatype literal)
+        literal literal
+        :else ""))
 
 (defmethod format-binding ::srx/uri
   [{[iri & _] :content}]
   iri)
 
-(defn- get-binding
+(defn get-binding
   "Get binding from `result`."
   [result]
   (format-binding (zip-xml/xml1-> result zip/down zip/node)))

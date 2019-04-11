@@ -1,7 +1,24 @@
 (ns sparclj.core-test
   (:require [sparclj.core :as sparql]
+            [clojure.data.xml :as xml]
+            [clojure.data.zip.xml :as zip-xml]
             [clojure.java.io :as io]
-            [clojure.test :refer :all]))
+            [clojure.test :refer :all]
+            [clojure.zip :as zip]))
+
+; ----- Helper functions -----
+
+(defn- parse-xml
+  [xml]
+  (-> xml
+      (xml/parse-str :skip-whitespace true)
+      zip/xml-zip))
+
+(defn- wrap-binding
+  [b]
+  (format "<binding xmlns='http://www.w3.org/2005/sparql-results#'>%s</binding>" b))
+
+; ----- Tests -----
 
 (deftest format-literal
   (let [xsd (partial str sparql/xsd-ns)]
@@ -12,6 +29,12 @@
          (xsd "integer") "5" 5
          (xsd "long") "10" 10
          (xsd "string") "foo" "foo")))
+
+(deftest get-binding
+  (are [xml clj] (= clj (-> xml wrap-binding parse-xml sparql/get-binding))
+       "<literal xml:lang='en'></literal>" ""
+       "<literal/>" ""
+       "<literal datatype='http://www.w3.org/2001/XMLSchema#integer'>30</literal>" 30))
 
 (deftest render-template
   (let [template "ping_endpoint.mustache"
