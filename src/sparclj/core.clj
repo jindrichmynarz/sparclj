@@ -42,6 +42,8 @@
 
 (s/def ::start-from ::spec/non-negative-int)
 
+(s/def ::stop-at fn?)
+
 (s/def ::update? boolean?)
 
 (s/def ::url (s/and ::spec/iri spec/http?))
@@ -412,26 +414,50 @@
   ([endpoint template data]
    (select-query endpoint (render-template template data))))
 
+(s/fdef take-until
+        :args (s/cat :pred fn?
+                     :coll sequential?)
+        :ret sequential?) 
+(defn take-until
+  "Returns a lazy sequence of successive items from `coll` until
+   `(pred item)` returns truthy value, including that item.
+  `pred` must be free of side-effects."
+  ; Taken from <https://groups.google.com/d/msg/clojure-dev/NaAuBz6SpkY/_aIDyyke9b0J>.
+  [pred coll]
+  (lazy-seq
+    (when-let [s (seq coll)]
+      (let [[head & tail] s]
+        (if (pred head)
+          (list head)
+          (cons head (take-until pred tail)))))))
+
 (s/fdef select-paged
         :args (s/cat :endpoint ::endpoint
                      :get-query-fn (s/fspec :args (s/cat :page (s/cat :limit ::page-size
                                                                       :offset ::offset)))
-                     :opts (s/keys* :opt [::parallel? ::start-from])))
+                     :opts (s/keys* :opt [::parallel? ::start-from ::stop-at])))
 (defn select-paged
   "Lazily execute paged SPARQL SELECT queries that are rendered from `get-query-fn`,
   which is passed `page-size` (LIMIT) and increasing OFFSET as [page-size offset].
   Queries will be executed in parallel if the ::parallel? parameter is set to true.
+  Paging stops based on ::stop-at function (default = when fewer than `page-size`
+  results are received.
   Can start from the offset given by ::start-from (default = 0)."
   [{::keys [page-size]
     :as endpoint}
    get-query-fn
-   & {::keys [parallel? start-from]}]
+   & {::keys [parallel? start-from stop-at]
+      :or {parallel? false
+           start-from 0}}]
   (let [map-fn (if parallel? pmap map)
-        pages (map vector (repeat page-size) (iterate (partial + page-size) (or start-from 0)))
+        stop-fn (or stop-at
+                    (fn [results]
+                      (take-until (comp (partial > page-size) count) results)))
+        pages (map vector (repeat page-size) (iterate (partial + page-size) start-from))
         execute-query-fn (partial select-query endpoint)]
     (->> pages
          (map-fn (comp execute-query-fn get-query-fn))
-         (take-while seq)
+         stop-fn
          lazy-cat')))
 
 (s/fdef update-operation

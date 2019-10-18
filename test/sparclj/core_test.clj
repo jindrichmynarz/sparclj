@@ -41,3 +41,8 @@
         data {:source-graph "http://placeholder"}]
     (is (= (sparql/render-template template data)
            (sparql/render-template (slurp (io/resource template)) data)))))
+
+(deftest take-until
+  (are [coll pred? result] (= (sparql/take-until pred? coll) result)
+       [true false false] not [true false]
+       [[0 1] [2] []] (comp (partial > 2) count) [[0 1] [2]]))
