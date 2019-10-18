@@ -316,8 +316,9 @@
       (concat (first colls) (lazy-cat' (next colls))))))
 
 (def ^:private mirror-proxy-settings
-  "Mirror environment variables for proxies (HTTP_PROXY, HTTPS_PROXY, NO_PROXY) as Java properties.
-  Environment variables are treated as case-insensitive, so for example both $http_proxy and $HTTP_PROXY will work."
+  "Mirror environment variables for proxies (HTTP_PROXY, HTTPS_PROXY, NO_PROXY)
+  as Java properties. Environment variables are treated as case-insensitive,
+  so for example both $http_proxy and $HTTP_PROXY will work."
   (letfn [(dual-case [s] [s (string/upper-case s)])
           (get-env [env] (some #(System/getenv %) (dual-case env)))
           (parse-url [^URL url] [(.getHost url) (str (.getPort url))])
@@ -332,6 +333,23 @@
                              (string/replace #"," "|"))]
         (set-proxy "http" :no-proxy no-proxy)
         (set-proxy "https" :no-proxy no-proxy)))))
+
+(s/fdef take-until
+        :args (s/cat :pred fn?
+                     :coll sequential?)
+        :ret sequential?) 
+(defn take-until
+  "Returns a lazy sequence of successive items from `coll` until
+   `(pred item)` returns truthy value, including that item.
+  `pred` must be free of side-effects."
+  ; Taken from <https://groups.google.com/d/msg/clojure-dev/NaAuBz6SpkY/_aIDyyke9b0J>.
+  [pred coll]
+  (lazy-seq
+    (when-let [s (seq coll)]
+      (let [[head & tail] s]
+        (if (pred head)
+          (list head)
+          (cons head (take-until pred tail)))))))
 
 ; ----- Public functions -----
 
@@ -413,23 +431,6 @@
    (select-template endpoint template {}))
   ([endpoint template data]
    (select-query endpoint (render-template template data))))
-
-(s/fdef take-until
-        :args (s/cat :pred fn?
-                     :coll sequential?)
-        :ret sequential?) 
-(defn take-until
-  "Returns a lazy sequence of successive items from `coll` until
-   `(pred item)` returns truthy value, including that item.
-  `pred` must be free of side-effects."
-  ; Taken from <https://groups.google.com/d/msg/clojure-dev/NaAuBz6SpkY/_aIDyyke9b0J>.
-  [pred coll]
-  (lazy-seq
-    (when-let [s (seq coll)]
-      (let [[head & tail] s]
-        (if (pred head)
-          (list head)
-          (cons head (take-until pred tail)))))))
 
 (s/fdef select-paged
         :args (s/cat :endpoint ::endpoint
